@@ -32,7 +32,6 @@ void I2C_Bitbang_Init(void)
 
     LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_GPIOB);
 
-
     LL_SYSCFG_SetEXTISource(LL_SYSCFG_EXTI_PORTB, LL_SYSCFG_EXTI_LINE7);
     LL_SYSCFG_SetEXTISource(LL_SYSCFG_EXTI_PORTB, LL_SYSCFG_EXTI_LINE6);
 
@@ -40,10 +39,12 @@ void I2C_Bitbang_Init(void)
     LL_EXTI_EnableFallingTrig_0_31(LL_EXTI_LINE_7);
 
     /* Configure GPIO*/
+
     LL_GPIO_SetPinMode(I2C_GPIO_PORT, I2C_SDA_PIN, LL_GPIO_MODE_INPUT);
     LL_GPIO_SetPinPull(I2C_GPIO_PORT, I2C_SDA_PIN, LL_GPIO_PULL_NO);
 
     /*Configure GPIO*/
+    LL_EXTI_EnableRisingTrig_0_31(LL_EXTI_LINE_6);
     LL_GPIO_SetPinMode(I2C_GPIO_PORT, I2C_SCL_PIN, LL_GPIO_MODE_INPUT);
     LL_GPIO_SetPinPull(I2C_GPIO_PORT, I2C_SCL_PIN, LL_GPIO_PULL_NO);
 
@@ -220,23 +221,32 @@ __STATIC_INLINE void i2c_set_sda_opendrain()
 __STATIC_INLINE void i2c_set_sda_input()
 {
     LL_GPIO_SetPinMode(I2C_GPIO_PORT, I2C_SDA_PIN, LL_GPIO_MODE_INPUT);
-    LL_GPIO_SetPinPull(I2C_GPIO_PORT, I2C_SDA_PIN, LL_GPIO_PULL_NO);
+//    LL_GPIO_SetPinPull(I2C_GPIO_PORT, I2C_SDA_PIN, LL_GPIO_PULL_NO);
 }
 
 __STATIC_INLINE void i2c_enable_sda_falling()
 {
+	LL_EXTI_EnableFallingTrig_0_31(LL_EXTI_LINE_7);
     LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_7);
+
 }
 
 __STATIC_INLINE void i2c_enable_scl_rising()
 {
     LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_6);
-    LL_EXTI_EnableRisingTrig_0_31(LL_EXTI_LINE_6);
+}
+
+__STATIC_INLINE void i2c_disable_scl_rising()
+{
+	LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_6);
+	LL_GPIO_SetPinPull(I2C_GPIO_PORT, I2C_SCL_PIN, LL_GPIO_PULL_NO);
+
 }
 
 uint8_t count_bit = 0;
 unsigned char Slave_Adress = 0x00;
-unsigned char device_address = 0x00;
+unsigned char Slave_register = 0x00;
+unsigned char Slave_rxdata = 0x00;
 bool start_condtion = false;
 
 void check_start_condition()
@@ -244,10 +254,8 @@ void check_start_condition()
     if (I2C_Read_SCL() && !I2C_Read_SDA())
     {
         start_condtion = true;
-        LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_7);
-        i2c_enable_scl_rising();
-//        uart_print("Sok\r\n");
-        //        DWT_Delay_us(10);
+        LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_7);//disable falling sda
+        LL_EXTI_EnableIT_0_31(LL_EXTI_LINE_6);//enable rising scl
     }
 }
 
@@ -258,47 +266,41 @@ void I2C_Event_Take()
     if (start_condtion)
     {
         bit = I2C_Read_Bit();
-        if (count_bit < 8)
+        if (count_bit <=7) // address
         {
-//            uart_printf("%d\r\n", bit);
-            Slave_Adress = (Slave_Adress << 1) | bit; // Dịch trái và OR bit
-//            uart_printf("0x%02X\r\n", Slave_Adress);
-            if (count_bit == 7)
+            Slave_Adress = (Slave_Adress << 1) | bit;
+
+            if (count_bit == 7 && (Slave_Adress >> 1 == 0x55))
             {
-//                DWT_Delay_us(10);
-                i2c_set_sda_opendrain();
-                I2C_Send_ACK();
-                i2c_set_sda_input();
-                uart_printf("add=0x%02X\r\n",Slave_Adress>>1);
-//                uart_printf("new\r\n"); // In ra địa chỉ nhận được
+            	i2c_set_sda_opendrain();
+            	I2C_SDA_Low();//Send ACK
+            }
+        }
+        else if(count_bit==8)
+        {
+			i2c_set_sda_input();
+        }
+        else if (count_bit >= 9 && count_bit <= 16) // register
+        {
+            Slave_register = (Slave_register << 1) | bit;
+        }
+        else if (count_bit >= 17 && count_bit <= 24)
+        {
+            Slave_rxdata = (Slave_rxdata << 1) | bit;
+            if (count_bit == 24)
+            {
+//                uart_printf("data=0x%02X\r\n", Slave_rxdata);
                 count_bit = 0;
                 start_condtion = false;
-                LL_EXTI_DisableIT_0_31(LL_EXTI_LINE_6);
+                i2c_disable_scl_rising();
+                i2c_enable_sda_falling();
+                uart_printf("add=0x%02X\r\n reg=0x%02X\r\n data=0x%02X\r\n", Slave_Adress >> 1,Slave_register,Slave_rxdata);
+                Slave_Adress=0x00;
+                Slave_register=0x00;
+                Slave_rxdata=0x00;
 
             }
-            count_bit++;
         }
+        count_bit++;
     }
-
-    //    count_bit++;
-    //
-    //    // Reset lại Slave_Adress và device_address khi bắt đầu nhận mới
-    //    if (count_bit == 1)
-    //    {
-    //        Slave_Adress = 0x00;
-    //        //        device_address = 0x00;
-    //    }
-
-    // Xử lý nhận địa chỉ slave (8 bit đầu tiên)
-
-    //    // Xử lý nhận device address (8 bit tiếp theo)
-    //    else if (count_bit > 8 && count_bit <= 16) {
-    //        device_address = (device_address << 1) | bit;  // Dịch trái và OR bit
-    //        if (count_bit == 16) {
-    //            DWT_Delay_us(3);  // Đợi 3 micro giây
-    //            I2C_Send_ACK();  // Gửi ACK
-    //            uart_printf("Device Address: 0x%02X\r\n", device_address);  // In ra device address
-    //            count_bit = 0;  // Đặt lại count_bit sau khi nhận xong
-    //        }
-    //    }
 }
