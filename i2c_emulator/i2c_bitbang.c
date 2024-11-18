@@ -303,14 +303,16 @@ void I2C_Event_Take()
                 }
                 else
                 {
-                    I2C_SDA_High();
+                	DWT_Delay_us(250);//250
+                	i2c_set_sda_input();
                     i2c_state = I2C_IDLE;
                     count_bit = 0;
                     start_condtion = false;
                     i2c_disable_scl_rising();
                     i2c_enable_sda_falling();
+                    uart_printf("addr fail\r\n");
                     Slave_Address = 0x00;
-                    for (int i = 0; i < 3; i++)
+                    for (int i = 0; i < 10; i++)
                     {
                         Slave_rxdata[i] = 0;
                     }
@@ -352,6 +354,10 @@ void I2C_Event_Take()
                         Slave_rxdata[i] = 0;
                     }
                     index_rxdata = 0;
+                    for (int i = 0; i < 10; i++)
+                    {
+                        Slave_rxdata[i] = 0;
+                    }
                     i2c_disable_scl_rising();
                     i2c_enable_sda_falling();
                 }
