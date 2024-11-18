@@ -303,7 +303,7 @@ void I2C_Event_Take()
                 }
                 else
                 {
-                	DWT_Delay_us(250);//250
+                	DWT_Delay_us(25);//250 for 10KHz, 25 for 100KHz
                 	i2c_set_sda_input();
                     i2c_state = I2C_IDLE;
                     count_bit = 0;
@@ -337,7 +337,7 @@ void I2C_Event_Take()
             {
                 i2c_set_sda_opendrain();
                 I2C_SDA_Low(); // Send ACK
-                DWT_Delay_us(100);
+                DWT_Delay_us(10); //10 for 10KHz, 100 for 100KHz
                 i2c_set_sda_input();
                 check_if_stop = true;
                 ++index_rxdata;
