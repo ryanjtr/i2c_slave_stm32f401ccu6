@@ -266,6 +266,7 @@ unsigned char Slave_Address = 0x00;
 unsigned char Slave_rxdata[10] = {0};
 unsigned char index_rxdata = 0;
 bool start_condtion = false;
+bool check_if_stop = false;
 unsigned char bit;
 
 void check_start_condition()
@@ -321,25 +322,36 @@ void I2C_Event_Take()
             i2c_state = I2C_DATA_RECEIVING;
             break;
         case I2C_DATA_RECEIVING:
+            if (check_if_stop && !I2C_Read_SDA())
+            {
+                goto here;
+            }
+            else
+            {
+                check_if_stop = false;
+            }
             Slave_rxdata[index_rxdata] = (Slave_rxdata[index_rxdata] << 1) | bit;
             if (++count_bit % 8 == 0)
             {
                 i2c_set_sda_opendrain();
                 I2C_SDA_Low(); // Send ACK
-                DWT_Delay_us(150);
-                I2C_SDA_High();
+                DWT_Delay_us(100);
                 i2c_set_sda_input();
-                if (++index_rxdata == 8)//receive n-1 byte, here n=9
+                check_if_stop = true;
+                ++index_rxdata;
+                if (0)
                 {
+                here:
                     count_bit = 0;
-                    index_rxdata = 0;
                     start_condtion = false;
+                    check_if_stop = false;
                     uart_printf("add=0x%02X\r\n", Slave_Address >> 1);
-                    for (int i = 0; i <= 7; i++)
+                    for (int i = 0; i < index_rxdata; i++)
                     {
                         uart_printf("d%d=0x%02X\r\n", i, Slave_rxdata[i]);
                         Slave_rxdata[i] = 0;
                     }
+                    index_rxdata = 0;
                     i2c_disable_scl_rising();
                     i2c_enable_sda_falling();
                 }
